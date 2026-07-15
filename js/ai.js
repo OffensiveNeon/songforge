@@ -94,6 +94,98 @@ export async function aiComplete(system, messages) {
   throw new Error('Unknown AI provider');
 }
 
+async function readSSE(res, extract) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const m = line.match(/^data:\s*(.*)$/);
+      if (!m || m[1] === '[DONE]') continue;
+      try { out += extract(JSON.parse(m[1])) || ''; } catch { /* keep-alive lines etc. */ }
+    }
+  }
+  return out;
+}
+
+// Streaming variant of aiComplete: calls onDelta(textChunk) as tokens arrive,
+// resolves with the full reply. Falls back to non-streaming if unsupported.
+export async function aiStream(system, messages, onDelta) {
+  const s = load().settings;
+  const prov = s.provider || 'anthropic';
+  const emit = t => { if (t) onDelta(t); return t; };
+  try {
+    if (prov === 'anthropic') {
+      if (!s.apiKey) throw new Error('No Anthropic API key — add one in ⚙️ Setup, or switch provider.');
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': s.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({ model: s.model || 'claude-sonnet-5', max_tokens: 4000, system, messages, stream: true }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      return await readSSE(res, d =>
+        d.type === 'content_block_delta' && d.delta?.text ? emit(d.delta.text) : '');
+    }
+    if (prov === 'openrouter' || prov === 'local') {
+      const url = prov === 'openrouter'
+        ? 'https://openrouter.ai/api/v1/chat/completions'
+        : s.localUrl.replace(/\/+$/, '') + '/chat/completions';
+      const key = prov === 'openrouter' ? s.openrouterKey : (s.localKey || '');
+      if (prov === 'openrouter' && !key) throw new Error('No OpenRouter key — add one in ⚙️ Setup.');
+      if (prov === 'local' && !s.localUrl) throw new Error('No local server URL — add one in ⚙️ Setup.');
+      const model = prov === 'openrouter' ? (s.openrouterModel || 'anthropic/claude-sonnet-4.5') : (s.localModel || '');
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(key ? { authorization: `Bearer ${key}` } : {}),
+          ...(prov === 'openrouter' ? { 'x-title': 'SongForge' } : {}),
+        },
+        body: JSON.stringify({
+          model, max_tokens: 4000, stream: true,
+          messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
+        }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      return await readSSE(res, d => emit(d.choices?.[0]?.delta?.content || ''));
+    }
+    if (prov === 'gemini') {
+      if (!s.geminiKey) throw new Error('No Gemini key — add one in ⚙️ Setup (free at aistudio.google.com).');
+      const model = s.geminiModel || 'gemini-2.5-flash';
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(s.geminiKey)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
+          contents: messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+        }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      return await readSSE(res, d =>
+        emit((d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('')));
+    }
+    throw new Error('Unknown AI provider');
+  } catch (e) {
+    // Streams need res.body support; if that's the failure, retry without streaming.
+    if (/body|stream|getReader/i.test(e.message)) {
+      const text = await aiComplete(system, messages);
+      onDelta(text);
+      return text;
+    }
+    throw e;
+  }
+}
+
 // Cover-art generation. Prefers Gemini (free tier), falls back to OpenRouter.
 export async function aiImage(prompt) {
   const s = load().settings;

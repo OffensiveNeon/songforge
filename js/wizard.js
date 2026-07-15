@@ -24,7 +24,7 @@ const CHARACTER_RULES = `Voice rules (this is a character-voice track — meter 
 - Dialogue/duet: characters talk PAST each other; disagreement stays unresolved; what they don't say carries the meaning.
 (Keep whichever of these applies; the others are calibration.)`;
 
-function phase1Prompt(p) {
+export function phase1Prompt(p) {
   const f = p.fields;
   const rules = p.mode === 'character' ? HARD_RULES + '\n\n' + CHARACTER_RULES : HARD_RULES;
   return `Let's write a song inspired by ${f.game || '[SOURCE]'}, about ${f.angle || '[EMOTIONAL ANGLE]'}.
@@ -40,7 +40,7 @@ ${rules}
 Do NOT write a full song yet. Brainstorm modular lyric material first: line OPTIONS organized by emotional stage, plus recurring motifs and 3-4 refrain/hook candidates. Multiple options per section so I can pick.`;
 }
 
-function albumBiblePrompt(p) {
+export function albumBiblePrompt(p) {
   const f = p.fields;
   return `Before any lyrics: let's lock an album bible for an album inspired by ${f.game || '[SOURCE]'}.
 Give me a one-paragraph album concept, then: tracklist, the emotional arc ACROSS tracks, and per-track concept + sound.
@@ -49,7 +49,7 @@ Title the album and tracks as a set, so the drama level matches.
 Do not write any lyrics until I approve the bible.`;
 }
 
-function phase2Prompt(p) {
+export function phase2Prompt(p) {
   const approved = p.lines.filter(l => l.status === 'approved');
   const rejected = p.lines.filter(l => l.status === 'rejected');
   let out = '';
@@ -67,7 +67,7 @@ function phase2Prompt(p) {
   return out;
 }
 
-function phase3Block(p) {
+export function phase3Block(p) {
   const approved = p.lines.filter(l => l.status === 'approved');
   const bySection = {};
   for (const l of approved) (bySection[l.section || 'unsorted'] ??= []).push(l.text);
@@ -78,7 +78,7 @@ function phase3Block(p) {
   return out.trim();
 }
 
-function phase4Prompt(p) {
+export function phase4Prompt(p) {
   const meter = p.mode === 'character'
     ? `- meter rules do NOT apply — this runs on voice authenticity instead (keep stutters, half-words, broken phrasing)`
     : `- each verse 6-8 lines, uniform cadence or rhythm
@@ -92,7 +92,7 @@ ${meter}
 - end in stillness, not climax — whispered/spoken coda, fade`;
 }
 
-const PHASE5 = `Suggest titles pulled from phrases already inside the lyrics. Flag anything culturally loaded (existing famous songs/idioms).`;
+export const PHASE5 = `Suggest titles pulled from phrases already inside the lyrics. Flag anything culturally loaded (existing famous songs/idioms).`;
 
 const PHASES = [
   { n: 1, label: '1 · Kickoff' },

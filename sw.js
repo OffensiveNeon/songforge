@@ -1,5 +1,5 @@
 // SongForge service worker: cache-first shell for offline use.
-const CACHE = 'songforge-v3';
+const CACHE = 'songforge-v4';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/data.js', 'js/ui.js', 'js/wizard.js', 'js/bank.js', 'js/chat.js', 'js/tagger.js', 'js/styles.js', 'js/ai.js',
