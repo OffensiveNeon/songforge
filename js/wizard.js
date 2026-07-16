@@ -1,17 +1,10 @@
-// Write view: walks the playbook phases and generates copy-paste prompts.
-import { activeProject, save, MODES } from './data.js';
-import { el, copyBlock, copyText, toast } from './ui.js';
+// Playbook prompt builders + the Song-setup and Send-to-Suno section components
+// used by the Studio view.
+import { save, MODES } from './data.js';
+import { el, copyText, toast } from './ui.js';
 import { aiImage, hasImageAI } from './ai.js';
 
-const VOCAL_OPTIONS = ['female vocals', 'male vocals', 'duet, male and female vocals', 'instrumental, no vocals'];
-function setVocals(tags, choice) {
-  // drop existing vocal-type chunks, then lead with the chosen one
-  const rest = tags.split(',').map(x => x.trim())
-    .filter(x => x && !/vocals|vocal\b|instrumental|duet|a cappella/i.test(x))
-    .join(', ');
-  return choice + (rest ? ', ' + rest : '');
-}
-
+// ---------- prompt builders ----------
 const HARD_RULES = `Hard rules:
 - Avoid cliched words and phrases. Subtext and nuance — imply, never explain.
 - No melodrama, no explicit emotion-labeling, no triumph, no catharsis.
@@ -94,212 +87,124 @@ ${meter}
 
 export const PHASE5 = `Suggest titles pulled from phrases already inside the lyrics. Flag anything culturally loaded (existing famous songs/idioms).`;
 
-const PHASES = [
-  { n: 1, label: '1 · Kickoff' },
-  { n: 2, label: '2 · Curate' },
-  { n: 3, label: '3 · Compile' },
-  { n: 4, label: '4 · Assemble' },
-  { n: 5, label: '5 · Title' },
-  { n: 6, label: '6 · Suno' },
-];
-
+// ---------- section components ----------
 function field(p, key, labelText, opts = {}) {
   const input = opts.multi
     ? el('textarea', { placeholder: opts.ph || '' })
     : el('input', { type: 'text', placeholder: opts.ph || '' });
   input.value = p.fields[key] || '';
-  input.addEventListener('input', () => { p.fields[key] = input.value; save(); rerenderPromptOnly(p); });
+  input.addEventListener('input', () => { p.fields[key] = input.value; save(); });
   return el('div', {}, el('label', {}, labelText), input);
 }
 
-let promptHost = null;
-let currentBuilder = null;
-function rerenderPromptOnly(p) {
-  if (promptHost && currentBuilder) {
-    promptHost.replaceChildren(copyBlock(currentBuilder(p)));
-  }
-}
-
-export function renderWrite(view) {
-  const p = activeProject();
-  view.replaceChildren();
-  view.append(el('h2', {}, '✍️ ', p.name));
-
-  // Mode selector
+// Song setup: mode + Phase 1 fields. onModeChange lets Studio refresh its action rows.
+export function setupSection(p, onModeChange) {
+  const wrap = el('div');
   const modeSel = el('select', {},
     ...Object.entries(MODES).map(([k, v]) => {
       const o = el('option', { value: k }, v);
       if (p.mode === k) o.selected = true;
       return o;
     }));
-  modeSel.addEventListener('change', () => { p.mode = modeSel.value; save(); renderWrite(view); });
-  view.append(el('div', { class: 'card' }, el('label', {}, 'Mode'), modeSel));
+  modeSel.addEventListener('change', () => { p.mode = modeSel.value; save(); onModeChange?.(); });
+  wrap.append(
+    el('label', {}, 'Mode'), modeSel,
+    el('div', { class: 'row' },
+      field(p, 'game', 'Source / inspiration', { ph: 'e.g. Silent Hill 4' }),
+      field(p, 'angle', 'Emotional angle', { ph: 'e.g. being made into a weapon' })),
+    field(p, 'pov', 'POV — the reframe (whose tragedy is it really?)', { ph: 'the victim/weapon/bystander, not the protagonist' }),
+    el('div', { class: 'row' },
+      field(p, 'sound', 'Sound', { ph: 'rock with discordant strings, unnerving — or 🎯 a 🎨 Styles preset' }),
+      field(p, 'arc', 'Emotional arc', { ph: 'stages of grief → acceptance, calmer tone' })),
+    field(p, 'raw', 'Raw material (dialogue, reference lines, rough draft)', { multi: true }),
+    field(p, 'cues', 'Production cues that mirror the arc', { ph: 'guitar starts structured, disintegrates by the bridge' }),
+  );
+  return wrap;
+}
 
-  // Phase pills
-  const pills = el('div', { class: 'phase-steps' },
-    ...PHASES.map(ph => el('button', {
-      class: p.phase === ph.n ? 'active' : '',
-      onclick: () => { p.phase = ph.n; save(); renderWrite(view); },
-    }, ph.label)));
-  view.append(pills);
+const VOCAL_OPTIONS = ['female vocals', 'male vocals', 'duet, male and female vocals', 'instrumental, no vocals'];
+function setVocals(tags, choice) {
+  const rest = tags.split(',').map(x => x.trim())
+    .filter(x => x && !/vocals|vocal\b|instrumental|duet|a cappella/i.test(x))
+    .join(', ');
+  return choice + (rest ? ', ' + rest : '');
+}
 
-  const card = el('div', { class: 'card' });
-  promptHost = el('div');
-  currentBuilder = null;
+// Send-to-Suno: style box + vocals + final lyrics + cover art.
+export function sunoSection(p) {
+  const wrap = el('div');
+  const styleTa = el('textarea', { style: 'min-height:70px', placeholder: 'comma-separated style tags — pick a preset in the 🎨 Styles tab, or type your own' });
+  styleTa.value = p.fields.sound || '';
+  const styleCount = el('span', { class: 'muted' });
+  const lyricsTa = el('textarea', { style: 'min-height:200px', placeholder: 'Paste the final assembled song here (with [Verse]/[Chorus] tags and production cues) so it lives with the project.' });
+  lyricsTa.value = p.fields.finalLyrics || '';
+  const lyricsCount = el('span', { class: 'muted' });
 
-  if (p.phase === 1) {
-    card.append(el('h3', {}, 'Phase 1 — Kickoff'),
-      el('p', { class: 'muted' }, 'Golden rule: the more raw material you bring, the faster you land. Fill in, then copy the prompt into your AI chat.'));
-    if (p.mode === 'album') {
-      card.append(el('p', { class: 'muted' }, '📀 Album mode: lock the album bible FIRST, then run phases 1-5 per track.'));
-    }
-    card.append(
-      el('div', { class: 'row' },
-        field(p, 'game', 'Source / inspiration', { ph: 'e.g. Silent Hill 4' }),
-        field(p, 'angle', 'Emotional angle', { ph: 'e.g. being made into a weapon' })),
-      field(p, 'pov', 'POV — the reframe (whose tragedy is it really?)', { ph: 'the victim/weapon/bystander, not the protagonist' }),
-      el('div', { class: 'row' },
-        field(p, 'sound', 'Sound', { ph: 'rock with discordant strings, unnerving' }),
-        field(p, 'arc', 'Emotional arc', { ph: 'stages of grief → acceptance, calmer tone' })),
-      field(p, 'raw', 'Raw material (dialogue, reference lines, rough draft)', { multi: true }),
-    );
-    if (p.mode === 'album') {
-      currentBuilder = null;
-      card.append(el('h3', {}, 'Album bible prompt (run this first)'), copyBlock(albumBiblePrompt(p)));
-      card.append(el('h3', {}, 'Kickoff prompt (per track)'));
-    }
-    currentBuilder = phase1Prompt;
-    promptHost.append(copyBlock(phase1Prompt(p)));
-    card.append(promptHost);
+  const updateCounts = () => {
+    const sc = styleTa.value.length, lc = lyricsTa.value.length;
+    styleCount.textContent = ` ${sc}/1000${sc > 1000 ? ' — too long for Suno!' : ''}`;
+    styleCount.className = sc > 1000 ? 'status-err' : 'muted';
+    lyricsCount.textContent = ` ${lc}/5000${lc > 5000 ? ' — too long for Suno!' : ''}`;
+    lyricsCount.className = lc > 5000 ? 'status-err' : 'muted';
+  };
+  styleTa.addEventListener('input', () => { p.fields.sound = styleTa.value; save(); updateCounts(); });
+  lyricsTa.addEventListener('input', () => { p.fields.finalLyrics = lyricsTa.value; save(); updateCounts(); });
+  updateCounts();
+
+  const vocalChips = el('div', { class: 'chips' },
+    ...VOCAL_OPTIONS.map(v => el('span', {
+      class: 'chip',
+      onclick: () => {
+        styleTa.value = setVocals(styleTa.value, v);
+        p.fields.sound = styleTa.value;
+        save(); updateCounts();
+        toast('Vocals set: ' + v);
+      },
+    }, v)));
+
+  wrap.append(
+    el('label', {}, 'Style of Music box', styleCount), styleTa,
+    el('label', {}, 'Vocals'), vocalChips,
+    el('button', { class: 'btn small', onclick: () => copyText(styleTa.value) }, '📋 Copy style'),
+    el('label', {}, 'Lyrics box', lyricsCount), lyricsTa,
+    el('button', { class: 'btn small', onclick: () => copyText(lyricsTa.value) }, '📋 Copy lyrics'),
+    el('p', { class: 'muted' }, 'No artist names in the style box — Suno rejects them. The 🎨 Styles tab\'s extractor writes Suno-safe tags.'),
+  );
+
+  // Cover art
+  const artCard = el('div', { class: 'card' }, el('h3', {}, '🖼️ Cover art'));
+  if (!hasImageAI()) {
+    artCard.append(el('p', { class: 'muted' }, 'To generate cover art in-app, add a Gemini API key (free at aistudio.google.com) or an OpenRouter key in ⚙️ Setup.'));
+  } else {
+    const artPrompt = el('textarea', { style: 'min-height:70px' });
+    artPrompt.value = p.fields.coverPrompt ||
+      `Square album cover art for a song called "${p.name}". Mood: ${p.fields.angle || p.fields.arc || 'melancholic'}. Visual style: dark, painterly, atmospheric. No text, no words, no lettering.`;
+    artPrompt.addEventListener('input', () => { p.fields.coverPrompt = artPrompt.value; save(); });
+    const artHost = el('div');
+    const genBtn = el('button', {
+      class: 'btn', onclick: async () => {
+        genBtn.disabled = true;
+        artHost.replaceChildren(el('p', { class: 'muted' }, '🎨 generating…'));
+        try {
+          const url = await aiImage(artPrompt.value);
+          const dl = el('a', {
+            class: 'btn small ghost', href: url,
+            download: `${p.name.replace(/[<>:"/\\|?*]/g, '_')} cover.png`,
+            style: 'display:inline-block;text-decoration:none;margin-top:8px',
+          }, '⬇️ Save image');
+          artHost.replaceChildren(
+            el('img', { src: url, style: 'max-width:100%;border-radius:10px;margin-top:8px' }),
+            el('div', {}, dl),
+            el('p', { class: 'muted' }, 'Not stored in the app — save it. Drop it next to the song\'s files (same name as the mp3) and the 🏷️ Tag tab embeds it.'),
+          );
+        } catch (e) {
+          artHost.replaceChildren(el('p', { class: 'status-err' }, e.message));
+        }
+        genBtn.disabled = false;
+      },
+    }, '✨ Generate cover');
+    artCard.append(el('label', {}, 'Image prompt'), artPrompt, genBtn, artHost);
   }
-
-  if (p.phase === 2) {
-    const nApproved = p.lines.filter(l => l.status === 'approved').length;
-    const nRejected = p.lines.filter(l => l.status === 'rejected').length;
-    const nCand = p.lines.filter(l => l.status === 'candidate').length;
-    card.append(el('h3', {}, 'Phase 2 — Curate with reasons'),
-      el('p', { class: 'muted' },
-        `Paste the AI's line options into the Lines tab, approve/reject each with a reason, then copy the generated reply below. 2-3 passes is normal. `,
-        `Bank now: ${nApproved} approved · ${nRejected} rejected · ${nCand} undecided.`));
-    if (!nApproved && !nRejected) {
-      card.append(el('p', { class: 'status-warn' }, '⚠️ No curated lines yet — go to the 🧺 Lines tab first.'));
-    }
-    currentBuilder = phase2Prompt;
-    promptHost.append(copyBlock(phase2Prompt(p)));
-    card.append(promptHost);
-  }
-
-  if (p.phase === 3) {
-    const nApproved = p.lines.filter(l => l.status === 'approved').length;
-    card.append(el('h3', {}, 'Phase 3 — Compilation (secret weapon)'),
-      el('p', { class: 'muted' }, `Paste EVERY approved line as one block before asking for assembly, so the song is built only from approved material. ${nApproved} approved lines in the bank.`));
-    currentBuilder = phase3Block;
-    promptHost.append(copyBlock(phase3Block(p)));
-    card.append(promptHost);
-  }
-
-  if (p.phase === 4) {
-    card.append(el('h3', {}, 'Phase 4 — Assembly rules'),
-      field(p, 'cues', 'Production cues that mirror the arc', { ph: 'guitar starts structured, disintegrates by the bridge' }));
-    currentBuilder = phase4Prompt;
-    promptHost.append(copyBlock(phase4Prompt(p)));
-    card.append(promptHost);
-    card.append(el('p', { class: 'muted' }, 'Send Phase 3\'s block and this in the same message for best results.'));
-  }
-
-  if (p.phase === 5) {
-    card.append(el('h3', {}, 'Phase 5 — Title'));
-    currentBuilder = () => PHASE5;
-    promptHost.append(copyBlock(PHASE5));
-    card.append(promptHost);
-    card.append(el('h3', {}, 'Final checklist'),
-      el('div', { class: 'pb-md', html: `<ul>
-        <li>Spoken-word section(s) using real source dialogue, varied delivery</li>
-        <li>Evolving refrain — final chorus changes 1-2 words</li>
-        <li>Emotional arc mapped to structure</li>
-        <li>Instrumentation tells the same story as the lyrics</li>
-        <li>Ending in stillness: whispered coda, fade-out</li>
-        <li>Title is a phrase from inside the lyrics</li></ul>` }));
-  }
-
-  if (p.phase === 6) {
-    card.append(el('h3', {}, 'Phase 6 — Send to Suno'),
-      el('p', { class: 'muted' }, 'Suno takes two boxes: Lyrics and Style of Music. Both are kept with this project.'));
-
-    const styleTa = el('textarea', { style: 'min-height:70px', placeholder: 'comma-separated style tags — pick a preset in the 🎨 Styles tab, or type your own' });
-    styleTa.value = p.fields.sound || '';
-    const styleCount = el('span', { class: 'muted' });
-    const lyricsTa = el('textarea', { style: 'min-height:220px', placeholder: 'Paste the final assembled song here (with [Verse]/[Chorus] tags and production cues) so it lives with the project.' });
-    lyricsTa.value = p.fields.finalLyrics || '';
-    const lyricsCount = el('span', { class: 'muted' });
-
-    const updateCounts = () => {
-      const sc = styleTa.value.length, lc = lyricsTa.value.length;
-      styleCount.textContent = ` ${sc}/1000${sc > 1000 ? ' — too long for Suno!' : ''}`;
-      styleCount.className = sc > 1000 ? 'status-err' : 'muted';
-      lyricsCount.textContent = ` ${lc}/5000${lc > 5000 ? ' — too long for Suno!' : ''}`;
-      lyricsCount.className = lc > 5000 ? 'status-err' : 'muted';
-    };
-    styleTa.addEventListener('input', () => { p.fields.sound = styleTa.value; save(); updateCounts(); });
-    lyricsTa.addEventListener('input', () => { p.fields.finalLyrics = lyricsTa.value; save(); updateCounts(); });
-    updateCounts();
-
-    const vocalChips = el('div', { class: 'chips' },
-      ...VOCAL_OPTIONS.map(v => el('span', {
-        class: 'chip',
-        onclick: () => {
-          styleTa.value = setVocals(styleTa.value, v);
-          p.fields.sound = styleTa.value;
-          save(); updateCounts();
-          toast('Vocals set: ' + v);
-        },
-      }, v)));
-
-    card.append(
-      el('label', {}, 'Style of Music box', styleCount), styleTa,
-      el('label', {}, 'Vocals'), vocalChips,
-      el('button', { class: 'btn small', onclick: () => copyText(styleTa.value) }, '📋 Copy style'),
-      el('label', {}, 'Lyrics box', lyricsCount), lyricsTa,
-      el('button', { class: 'btn small', onclick: () => copyText(lyricsTa.value) }, '📋 Copy lyrics'),
-      el('p', { class: 'muted' }, 'Reminder: no artist names in the style box — Suno rejects them. The 🎨 Styles tab\'s extractor writes Suno-safe tags.'),
-    );
-
-    // ---- Cover art ----
-    const artCard = el('div', { class: 'card' }, el('h3', {}, '🖼️ Cover art'));
-    if (!hasImageAI()) {
-      artCard.append(el('p', { class: 'muted' }, 'To generate cover art in-app, add a Gemini API key (free at aistudio.google.com) or an OpenRouter key in ⚙️ Setup. Note: a ChatGPT/Gemini chat subscription is not an API key.'));
-    } else {
-      const artPrompt = el('textarea', { style: 'min-height:70px' });
-      artPrompt.value = p.fields.coverPrompt ||
-        `Square album cover art for a song called "${p.name}". Mood: ${p.fields.angle || p.fields.arc || 'melancholic'}. Visual style: dark, painterly, atmospheric. No text, no words, no lettering.`;
-      artPrompt.addEventListener('input', () => { p.fields.coverPrompt = artPrompt.value; save(); });
-      const artHost = el('div');
-      const genBtn = el('button', {
-        class: 'btn', onclick: async () => {
-          genBtn.disabled = true;
-          artHost.replaceChildren(el('p', { class: 'muted' }, '🎨 generating…'));
-          try {
-            const url = await aiImage(artPrompt.value);
-            const dl = el('a', {
-              class: 'btn small ghost', href: url,
-              download: `${p.name.replace(/[<>:"/\\|?*]/g, '_')} cover.png`,
-              style: 'display:inline-block;text-decoration:none;margin-top:8px',
-            }, '⬇️ Save image');
-            artHost.replaceChildren(
-              el('img', { src: url, style: 'max-width:100%;border-radius:10px;margin-top:8px' }),
-              el('div', {}, dl),
-              el('p', { class: 'muted' }, 'Not stored in the app — save it. Drop it next to the song\'s files (same name as the mp3) and the 🏷️ Tag tab embeds it.'),
-            );
-          } catch (e) {
-            artHost.replaceChildren(el('p', { class: 'status-err' }, e.message));
-          }
-          genBtn.disabled = false;
-        },
-      }, '✨ Generate cover');
-      artCard.append(el('label', {}, 'Image prompt'), artPrompt, genBtn, artHost);
-    }
-    card.append(artCard);
-  }
-
-  view.append(card);
+  wrap.append(artCard);
+  return wrap;
 }

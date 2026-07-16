@@ -105,3 +105,32 @@ table.tagtable th,table.tagtable td{padding:6px 8px; border-bottom:1px solid var
   #tabs button span{font-size:14px}
   #view{padding-bottom:30px}
 }
+
+/* ---------- Studio ---------- */
+#view.wide{max-width:1500px}
+.studio{display:grid; gap:14px; grid-template-columns:1fr}
+details.section{background:var(--bg2); border:1px solid var(--line); border-radius:var(--radius); margin-bottom:14px}
+details.section>summary{
+  cursor:pointer; padding:12px 14px; font-weight:600; font-size:16px;
+  list-style:none; display:flex; align-items:center; gap:8px; user-select:none;
+}
+details.section>summary::-webkit-details-marker{display:none}
+details.section>summary::after{content:'▸'; margin-left:auto; color:var(--fg-dim); transition:transform .15s}
+details.section[open]>summary::after{transform:rotate(90deg)}
+details.section[open]>summary{border-bottom:1px solid var(--line)}
+.section-body{padding:14px}
+.section-body .card{background:var(--bg3)}
+.chat-dock{display:flex; flex-direction:column; gap:10px}
+.chat-head{display:flex; justify-content:space-between; align-items:center; gap:8px}
+.chat-pane .chat-log{flex:1; overflow-y:auto; min-height:120px; margin-bottom:0}
+@media (min-width:1000px){
+  .studio{grid-template-columns:11fr 9fr; align-items:start}
+  .studio-subtabs{display:none}
+  .chat-dock{position:sticky; top:10px; height:calc(100vh - 150px)}
+}
+@media (max-width:999px){
+  .studio[data-sub="song"] .sec-bank, .studio[data-sub="song"] .chat-dock{display:none}
+  .studio[data-sub="lines"] .sec-setup, .studio[data-sub="lines"] .sec-suno, .studio[data-sub="lines"] .chat-dock{display:none}
+  .studio[data-sub="chat"] .studio-left{display:none}
+  .chat-pane .chat-log{max-height:55vh}
+}

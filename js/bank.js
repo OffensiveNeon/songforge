@@ -1,4 +1,5 @@
-// Lines view: the line bank — paste candidates, approve/reject with reasons.
+// Line bank component: paste candidates, approve/reject with reasons.
+// Rendered into a host element so Studio can embed it and react to changes.
 import { activeProject, save, addLines, APPROVE_REASONS, REJECT_REASONS } from './data.js';
 import { el, toast } from './ui.js';
 
@@ -27,24 +28,17 @@ function lineItem(p, line, rerender) {
   if (meta.length) item.append(el('div', { class: 'line-meta' }, meta.join(' · ')));
 
   const actions = el('div', { class: 'line-actions' });
-  let pickerOpen = null;
-
-  const setStatus = (status, reasons, cls) => {
-    if (pickerOpen) { pickerOpen.remove(); pickerOpen = null; }
+  const setStatus = (status) => {
     line.status = status;
     line.reason = '';
-    pickerOpen = reasonPicker(line, reasons, cls, () => { save(); rerender(); });
-    item.append(pickerOpen);
     save(); rerender();
   };
-
   actions.append(
-    el('button', { class: 'btn small', style: 'background:var(--good);color:#0a2412', onclick: () => setStatus('approved', APPROVE_REASONS, 'good') }, '✓ keep'),
-    el('button', { class: 'btn small', style: 'background:var(--bad);color:#2d0808', onclick: () => setStatus('rejected', REJECT_REASONS, 'bad') }, '✗ cut'),
-    el('button', { class: 'btn small ghost', onclick: () => { line.status = 'candidate'; line.reason = ''; save(); rerender(); } }, 'reset'),
+    el('button', { class: 'btn small', style: 'background:var(--good);color:#0a2412', onclick: () => setStatus('approved') }, '✓ keep'),
+    el('button', { class: 'btn small', style: 'background:var(--bad);color:#2d0808', onclick: () => setStatus('rejected') }, '✗ cut'),
+    el('button', { class: 'btn small ghost', onclick: () => setStatus('candidate') }, 'reset'),
     el('button', { class: 'btn small ghost', onclick: () => { p.lines = p.lines.filter(l => l.id !== line.id); save(); rerender(); } }, '🗑'),
   );
-  // Inline reason picker when a status was chosen but no reason given yet
   if (line.status !== 'candidate' && !line.reason) {
     item.append(el('div', { class: 'line-meta' }, 'why? (the why steers the next batch)'),
       reasonPicker(line, line.status === 'approved' ? APPROVE_REASONS : REJECT_REASONS,
@@ -54,17 +48,15 @@ function lineItem(p, line, rerender) {
   return item;
 }
 
-export function renderLines(view) {
+// opts.onChange fires after any mutation (used by Studio to refresh phase actions).
+export function renderBankInto(host, opts = {}) {
   const p = activeProject();
-  const rerender = () => renderLines(view);
-  view.replaceChildren();
-  view.append(el('h2', {}, '🧺 Line bank — ', p.name));
+  const rerender = () => { renderBankInto(host, opts); opts.onChange?.(); };
+  host.replaceChildren();
 
-  // Paste box
   const section = el('input', { type: 'text', placeholder: 'section / emotional stage (optional, e.g. "denial", "chorus candidates")' });
-  const paste = el('textarea', { placeholder: 'Paste the AI\'s line options here — one line per row. Bullets and numbering are stripped automatically.' });
-  view.append(el('div', { class: 'card' },
-    el('h3', {}, 'Add candidates'),
+  const paste = el('textarea', { placeholder: 'Paste line options here — one per row. Bullets and numbering are stripped automatically.' });
+  host.append(el('div', { class: 'card' },
     el('label', {}, 'Section'), section,
     el('label', {}, 'Lines'), paste,
     el('button', {
@@ -89,9 +81,9 @@ export function renderLines(view) {
     if (!lines.length) continue;
     const card = el('div', { class: 'card' }, el('h3', {}, `${title} (${lines.length})`));
     for (const line of lines) card.append(lineItem(p, line, rerender));
-    view.append(card);
+    host.append(card);
   }
   if (!p.lines.length) {
-    view.append(el('p', { class: 'muted' }, 'Nothing in the bank yet. Run Phase 1 in the Write tab, then paste the AI\'s line options above.'));
+    host.append(el('p', { class: 'muted' }, 'Nothing banked yet — brainstorm in the chat (▶ button above), then paste or tick lines in.'));
   }
 }

@@ -1,20 +1,18 @@
 // SongForge shell: routing, project switcher, playbook + settings views.
 import { load, save, activeProject, setActiveProject, newProject, deleteProject, exportAll, importAll, DEFAULT_PLAYBOOK_MD } from './data.js';
 import { el, toast, renderMd } from './ui.js';
-import { renderWrite } from './wizard.js';
-import { renderLines } from './bank.js';
-import { renderChat } from './chat.js';
+import { renderStudio } from './studio.js';
 import { renderTagger } from './tagger.js';
 import { renderStyles } from './styles.js';
 
 const view = document.getElementById('view');
-let current = 'write';
+let current = 'studio';
 
 function renderProjectSwitcher() {
   const host = document.getElementById('project-switch');
   const s = load();
   host.replaceChildren();
-  if (!['write', 'lines', 'chat'].includes(current)) return;
+  if (current !== 'studio') return;
   const sel = el('select', {});
   for (const p of s.projects) {
     const o = el('option', { value: p.id }, p.name);
@@ -181,12 +179,13 @@ function renderSettings(v) {
   v.append(el('p', { class: 'muted', style: 'text-align:center' }, 'SongForge · your songs never leave your device'));
 }
 
-const VIEWS = { write: renderWrite, lines: renderLines, chat: renderChat, styles: renderStyles, tagger: renderTagger, playbook: renderPlaybook, settings: renderSettings };
+const VIEWS = { studio: renderStudio, styles: renderStyles, tagger: renderTagger, playbook: renderPlaybook, settings: renderSettings };
 
 function render() {
   renderProjectSwitcher();
   document.querySelectorAll('#tabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.view === current));
+  view.classList.toggle('wide', current === 'studio');
   VIEWS[current](view);
   window.scrollTo(0, 0);
 }
