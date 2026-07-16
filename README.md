@@ -4,8 +4,7 @@ A songwriting companion + Suno library tagger. One app, all devices, no accounts
 
 ## What it does
 
-- **✍️ Write** — walks you through the 5-phase playbook (Kickoff → Curate → Compile → Assemble → Title) and generates copy-paste prompts for any AI chat. Supports Single / Album / Character-voice modes.
-- **🧺 Lines** — the line bank. Paste the AI's line options, approve/reject each with a *reason* (the reasons are auto-woven into your Phase 2 reply and Phase 3 compilation block).
+- **🎛️ Studio** — the whole songwriting flow on one screen: song setup, the line bank (approve/reject with *reasons*, auto-woven into curation and compilation prompts), and the Send-to-Suno panel, with the AI chat docked alongside on desktop (sub-tabs on mobile). ▶ buttons push each playbook phase's prompt straight into the chat; 📋 buttons copy them for external AI chats. Supports Single / Album / Character-voice modes.
 - **💬 Chat** — optional built-in AI co-writer that knows your playbook, project setup, and line bank. Connect any of: Anthropic key, OpenRouter key (has free models), Google Gemini key (free tier at aistudio.google.com), or a local model (Ollama / LM Studio with `OLLAMA_ORIGINS=*`). Works without any of them via the Write tab's copy-paste prompts.
 - **🖼️ Covers** — Write → Phase 6 generates album cover art in-app (Gemini or OpenRouter key), with vocal-type chips (male/female/duet/instrumental) that rewrite the style tags.
 - **🎧 Preview** — the Tag tab has a play button per song, straight from your Suno Downloads.
